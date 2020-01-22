@@ -1,10 +1,22 @@
 package org.apache.phoenix.replication;
 
+import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
+import org.apache.hadoop.hbase.CellScanner;
+import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.client.Admin;
+import org.apache.hadoop.hbase.ipc.BlockingRpcCallback;
+import org.apache.hadoop.hbase.ipc.HBaseRpcController;
+import org.apache.hadoop.hbase.ipc.HBaseRpcControllerImpl;
+import org.apache.hadoop.hbase.ipc.RegionServerCoprocessorRpcChannel;
+import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
+import org.apache.hadoop.hbase.protobuf.ReplicationProtbufUtil;
 import org.apache.hadoop.hbase.replication.regionserver.MetricsSource;
 import org.apache.hadoop.hbase.replication.regionserver.ReplicationSinkManager;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
@@ -31,14 +43,17 @@ import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.TableNotFoundException;
+import org.apache.hadoop.hbase.util.Pair;
+import org.apache.phoenix.coprocessor.generated.PhoenixReplicationSinkUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hbase.client.ClusterConnection;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.ipc.RpcServer;
-import org.apache.hadoop.hbase.protobuf.ReplicationProtbufUtil;
-import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.AdminService.BlockingInterface;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryRequest;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos.ReplicateWALEntryResponse;
+import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.ClientService.BlockingInterface;
 import org.apache.hadoop.hbase.replication.HBaseReplicationEndpoint;
 import org.apache.hadoop.hbase.replication.ReplicationPeer.PeerState;
 import org.apache.hadoop.hbase.replication.regionserver.ReplicationSinkManager.SinkPeer;
@@ -65,6 +80,7 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
   private static final long DEFAULT_MAX_TERMINATION_WAIT_MULTIPLIER = 2;
 
   private ClusterConnection conn;
+  private Admin admin;
   private Configuration localConf;
   private Configuration conf;
   // How long should we sleep for each retry
@@ -111,6 +127,7 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
     // replication and make replication specific settings such as compression or codec to use
     // passing Cells.
     this.conn = (ClusterConnection) ConnectionFactory.createConnection(this.conf);
+    this.admin = conn.getAdmin();
     this.sleepForRetries =
         this.conf.getLong("replication.source.sleepforretries", 1000);
     this.metrics = context.getMetrics();
@@ -428,20 +445,21 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
   }
 
   protected Replicator createReplicator(List<Entry> entries, int ordinal) {
-    return new Replicator(entries, ordinal);
+    return new Replicator(admin, entries, ordinal);
   }
 
   protected class Replicator implements Callable<Integer> {
     private List<Entry> entries;
     private int ordinal;
-    public Replicator(List<Entry> entries, int ordinal) {
+    private Admin admin;
+    public Replicator(Admin admin, List<Entry> entries, int ordinal) {
       this.entries = entries;
       this.ordinal = ordinal;
+      this.admin = admin;
     }
 
-    protected void replicateEntries(BlockingInterface rrs, final List<Entry> batch,
-                                    String replicationClusterId, Path baseNamespaceDir, Path hfileArchiveDir)
-        throws IOException {
+    protected void replicateEntries(RegionServerCoprocessorRpcChannel channel, final List<Entry> batch,
+        String replicationClusterId, Path baseNamespaceDir, Path hfileArchiveDir) throws IOException {
       if (LOG.isTraceEnabled()) {
         long size = 0;
         for (Entry e: entries) {
@@ -453,7 +471,7 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
             replicationClusterId);
       }
       try {
-        ReplicationProtbufUtil.replicateWALEntry(rrs, batch.toArray(new Entry[batch.size()]),
+        replicateWALEntry(channel, batch.toArray(new Entry[batch.size()]),
             replicationClusterId, baseNamespaceDir, hfileArchiveDir);
         if (LOG.isTraceEnabled()) {
           LOG.trace("Completed replicating batch " + System.identityHashCode(entries));
@@ -466,13 +484,44 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
       }
     }
 
+
+    private void replicateWALEntry(RegionServerCoprocessorRpcChannel channel, final Entry[] entries,
+        String replicationClusterId, Path sourceBaseNamespaceDir, Path sourceHFileArchiveDir)
+        throws IOException {
+      Pair<ReplicateWALEntryRequest, CellScanner> p =
+          ReplicationProtbufUtil.buildReplicateWALEntryRequest(
+              entries, null, replicationClusterId, sourceBaseNamespaceDir,
+              sourceHFileArchiveDir);
+      HBaseRpcController controller = new HBaseRpcControllerImpl(p.getSecond());
+      final BlockingRpcCallback<ReplicateWALEntryResponse> rpcCallback = new BlockingRpcCallback<>();
+      try {
+        PhoenixReplicationSinkUtil.PhoenixReplicationSinkService service =
+            ProtobufUtil.newServiceStub(PhoenixReplicationSinkUtil.PhoenixReplicationSinkService.class, channel);
+        service.replicateEntries(controller, p.getFirst(), rpcCallback);
+        rpcCallback.get();
+      } catch (Exception e) {
+        throw new IOException("Error replicating entries", e);
+      }
+    }
+
     @Override
     public Integer call() throws IOException {
       SinkPeer sinkPeer = null;
       try {
         sinkPeer = replicationSinkMgr.getReplicationSink();
-        BlockingInterface rrs = sinkPeer.getRegionServer();
-        replicateEntries(rrs, entries, replicationClusterId, baseNamespaceDir, hfileArchiveDir);
+        // Hack since it is not private.. lets fix it later.
+        ServerName serverName = null;
+        try {
+          Method privateStringMethod = null;
+          privateStringMethod = SinkPeer.class.getDeclaredMethod("getServerName");
+          Preconditions.checkNotNull(privateStringMethod);
+          serverName = (ServerName)privateStringMethod.invoke(sinkPeer);
+        } catch (NoSuchMethodException|IllegalAccessException|InvocationTargetException e) {
+        }
+        Preconditions.checkNotNull(serverName);
+        RegionServerCoprocessorRpcChannel channel = new RegionServerCoprocessorRpcChannel(conn,
+            serverName);
+        replicateEntries(channel, entries, replicationClusterId, baseNamespaceDir, hfileArchiveDir);
         replicationSinkMgr.reportSinkSuccess(sinkPeer);
         return ordinal;
       } catch (IOException ioe) {

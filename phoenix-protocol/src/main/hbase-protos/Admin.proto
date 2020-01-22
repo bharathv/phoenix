@@ -1,0 +1,48 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// This file contains protocol buffers that are used for Admin service.
+
+option java_package = "org.apache.hadoop.hbase.protobuf.generated";
+option java_outer_classname = "AdminProtos";
+option java_generic_services = true;
+option java_generate_equals_and_hash = true;
+option optimize_for = SPEED;
+
+import "WAL.proto";
+
+// Protocol buffer version of WAL for replication
+message WALEntry {
+    required WALKey key = 1;
+    // Following may be null if the KVs/Cells are carried along the side in a cellblock (See
+    // RPC for more on cellblocks). If Cells/KVs are in a cellblock, this next field is null
+    // and associated_cell_count has count of Cells associated w/ this WALEntry
+    repeated bytes key_value_bytes = 2;
+    // If Cell data is carried alongside in a cellblock, this is count of Cells in the cellblock.
+    optional int32 associated_cell_count = 3;
+}
+
+message ReplicateWALEntryRequest {
+    repeated WALEntry entry = 1;
+    optional string replicationClusterId = 2;
+    optional string sourceBaseNamespaceDirPath = 3;
+    optional string sourceHFileArchiveDirPath = 4;
+}
+
+message ReplicateWALEntryResponse {
+}
