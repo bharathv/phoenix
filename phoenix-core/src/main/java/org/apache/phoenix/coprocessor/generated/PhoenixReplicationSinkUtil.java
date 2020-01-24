@@ -249,13 +249,12 @@ public final class PhoenixReplicationSinkUtil {
       descriptor;
   static {
     java.lang.String[] descriptorData = {
-      "\n\037PhoenixReplicationService.proto\032\030hbase" +
-      "-protos/Admin.proto2j\n\035PhoenixReplicatio" +
-      "nSinkService\022I\n\020replicateEntries\022\031.Repli" +
-      "cateWALEntryRequest\032\032.ReplicateWALEntryR" +
-      "esponseBN\n(org.apache.phoenix.coprocesso" +
-      "r.generatedB\032PhoenixReplicationSinkUtilH" +
-      "\001\210\001\001\240\001\001"
+      "\n\037PhoenixReplicationService.proto\032\013Admin" +
+      ".proto2j\n\035PhoenixReplicationSinkService\022" +
+      "I\n\020replicateEntries\022\031.ReplicateWALEntryR" +
+      "equest\032\032.ReplicateWALEntryResponseBN\n(or" +
+      "g.apache.phoenix.coprocessor.generatedB\032" +
+      "PhoenixReplicationSinkUtilH\001\210\001\001\240\001\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
       new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {

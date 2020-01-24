@@ -35,15 +35,11 @@ fi
 
 PROTO_ROOT_DIR=`dirname $0`
 PROTO_DIR=$PROTO_ROOT_DIR
-HBASE_PROTO_DIR=$PROTO_ROOT_DIR/hbase-protos
 JAVA_DIR=$PROTO_ROOT_DIR/../../../phoenix-core/src/main/java
 
 set -x 
 
-for f in $HBASE_PROTO_DIR/*.proto ; do
-  protoc -I$HBASE_PROTO_DIR --java_out=$JAVA_DIR $f
-done
 for f in $PROTO_DIR/*.proto ; do
-  protoc -I$PROTO_DIR -I$HBASE_PROTO_DIR --java_out=$JAVA_DIR $f
+  protoc -I$PROTO_DIR --java_out=$JAVA_DIR $f
 done
 
