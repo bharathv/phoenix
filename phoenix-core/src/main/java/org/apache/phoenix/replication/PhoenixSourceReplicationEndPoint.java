@@ -27,12 +27,17 @@ import java.util.List;
 
 public class PhoenixSourceReplicationEndPoint extends HBaseInterClusterReplicationEndpoint {
   private SchemaRepository schemaRepository;
-  private static final String TABLE_NAME_ATTRIBUTE = "phoenix.tablename";
+  public static final String TABLE_NAME_ATTRIBUTE = "phoenix.tablename";
 
   @Override
   public void init(Context context) throws IOException {
     super.init(context);
     schemaRepository = SchemaRepositoryFactory.create(context.getConfiguration());
+    try {
+      schemaRepository.init(context.getConfiguration());
+    } catch (Exception e) {
+      throw new IOException("Schemarepo exception ", e);
+    }
   }
 
   @Override
@@ -40,8 +45,8 @@ public class PhoenixSourceReplicationEndPoint extends HBaseInterClusterReplicati
     // intercept the entries and add annotations.
     for (WAL.Entry entry: entries) {
       TableName hbaseTbl = entry.getKey().getTablename();
-      entry.getKey().addExtendedAttribute(
-          TABLE_NAME_ATTRIBUTE, schemaRepository.resolve(hbaseTbl));
+      byte[] phTbl = schemaRepository.resolve(hbaseTbl);
+      entry.getKey().addExtendedAttribute(TABLE_NAME_ATTRIBUTE, phTbl);
     }
     return super.createBatches(entries);
   }

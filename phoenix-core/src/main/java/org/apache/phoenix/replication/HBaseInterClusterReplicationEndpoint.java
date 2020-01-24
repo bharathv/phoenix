@@ -2,6 +2,7 @@ package org.apache.phoenix.replication;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
+import com.google.protobuf.ByteString;
 import org.apache.hadoop.hbase.CellScanner;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.Admin;
@@ -11,6 +12,8 @@ import org.apache.hadoop.hbase.ipc.HBaseRpcControllerImpl;
 import org.apache.hadoop.hbase.ipc.RegionServerCoprocessorRpcChannel;
 import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.protobuf.ReplicationProtbufUtil;
+import org.apache.hadoop.hbase.protobuf.generated.AdminProtos;
+import org.apache.hadoop.hbase.protobuf.generated.WALProtos;
 import org.apache.hadoop.hbase.replication.regionserver.MetricsSource;
 import org.apache.hadoop.hbase.replication.regionserver.ReplicationSinkManager;
 
@@ -44,7 +47,8 @@ import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.TableNotFoundException;
 import org.apache.hadoop.hbase.util.Pair;
-import org.apache.phoenix.coprocessor.generated.PhoenixReplicationSinkUtil;
+import org.apache.hadoop.hbase.wal.WAL;
+import org.apache.phoenix.coprocessor.generated.PhoenixReplicationSinkUtil.PhoenixReplicationSinkService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.hadoop.hbase.client.ClusterConnection;
@@ -343,6 +347,7 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
           } catch (InterruptedException ie) {
             iox =  new IOException(ie);
           } catch (ExecutionException ee) {
+            LOG.error("Execution exception: ", ee);
             // cause must be an IOException
             iox = (IOException)ee.getCause();
           }
@@ -495,10 +500,12 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
       HBaseRpcController controller = new HBaseRpcControllerImpl(p.getSecond());
       final BlockingRpcCallback<ReplicateWALEntryResponse> rpcCallback = new BlockingRpcCallback<>();
       try {
-        PhoenixReplicationSinkUtil.PhoenixReplicationSinkService service =
-            ProtobufUtil.newServiceStub(PhoenixReplicationSinkUtil.PhoenixReplicationSinkService.class, channel);
+        PhoenixReplicationSinkService service = ProtobufUtil.newServiceStub(PhoenixReplicationSinkService.class, channel);
         service.replicateEntries(controller, p.getFirst(), rpcCallback);
-        rpcCallback.get();
+        ReplicateWALEntryResponse resp = rpcCallback.get();
+        if (controller.failed()) {
+          throw controller.getFailed();
+        }
       } catch (Exception e) {
         throw new IOException("Error replicating entries", e);
       }
@@ -514,9 +521,11 @@ public class HBaseInterClusterReplicationEndpoint extends HBaseReplicationEndpoi
         try {
           Method privateStringMethod = null;
           privateStringMethod = SinkPeer.class.getDeclaredMethod("getServerName");
+          privateStringMethod.setAccessible(true);
           Preconditions.checkNotNull(privateStringMethod);
           serverName = (ServerName)privateStringMethod.invoke(sinkPeer);
         } catch (NoSuchMethodException|IllegalAccessException|InvocationTargetException e) {
+          LOG.error("error invoking method", e);
         }
         Preconditions.checkNotNull(serverName);
         RegionServerCoprocessorRpcChannel channel = new RegionServerCoprocessorRpcChannel(conn,

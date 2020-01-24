@@ -426,7 +426,7 @@ public class UpsertValuesIT extends ParallelStatsDisabledIT {
         } finally {
             closeStmtAndConn(stmt, conn);
         }
-        
+
         try {
             conn = DriverManager.getConnection(getUrl(), props);
             stmt = conn.prepareStatement("upsert into " + tableName + " values ('a', 0.0)");
