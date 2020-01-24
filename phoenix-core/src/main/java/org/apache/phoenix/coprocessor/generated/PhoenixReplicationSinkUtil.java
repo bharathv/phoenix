@@ -17,7 +17,7 @@ public final class PhoenixReplicationSinkUtil {
 
     public interface Interface {
       /**
-       * <code>rpc replicateEntries(.ReplicateWALEntryRequest) returns (.ReplicateWALEntryResponse);</code>
+       * <code>rpc replicateEntries(.hbase.pb.ReplicateWALEntryRequest) returns (.hbase.pb.ReplicateWALEntryResponse);</code>
        */
       public abstract void replicateEntries(
           com.google.protobuf.RpcController controller,
@@ -102,7 +102,7 @@ public final class PhoenixReplicationSinkUtil {
     }
 
     /**
-     * <code>rpc replicateEntries(.ReplicateWALEntryRequest) returns (.ReplicateWALEntryResponse);</code>
+     * <code>rpc replicateEntries(.hbase.pb.ReplicateWALEntryRequest) returns (.hbase.pb.ReplicateWALEntryResponse);</code>
      */
     public abstract void replicateEntries(
         com.google.protobuf.RpcController controller,
@@ -250,11 +250,12 @@ public final class PhoenixReplicationSinkUtil {
   static {
     java.lang.String[] descriptorData = {
       "\n\037PhoenixReplicationService.proto\032\013Admin" +
-      ".proto2j\n\035PhoenixReplicationSinkService\022" +
-      "I\n\020replicateEntries\022\031.ReplicateWALEntryR" +
-      "equest\032\032.ReplicateWALEntryResponseBN\n(or" +
-      "g.apache.phoenix.coprocessor.generatedB\032" +
-      "PhoenixReplicationSinkUtilH\001\210\001\001\240\001\001"
+      ".proto2|\n\035PhoenixReplicationSinkService\022" +
+      "[\n\020replicateEntries\022\".hbase.pb.Replicate" +
+      "WALEntryRequest\032#.hbase.pb.ReplicateWALE" +
+      "ntryResponseBN\n(org.apache.phoenix.copro" +
+      "cessor.generatedB\032PhoenixReplicationSink" +
+      "UtilH\001\210\001\001\240\001\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
       new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {

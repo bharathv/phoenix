@@ -25,6 +25,6 @@ option optimize_for = SPEED;
 import "Admin.proto";
 
 service PhoenixReplicationSinkService {
-  rpc replicateEntries(ReplicateWALEntryRequest)
-    returns (ReplicateWALEntryResponse);
+  rpc replicateEntries(hbase.pb.ReplicateWALEntryRequest)
+    returns (hbase.pb.ReplicateWALEntryResponse);
 }
